@@ -80,9 +80,9 @@ float theta = 0;
 const float targetDist = 7;
 const float mPerDeg = (1.0f/360.0f) * 2 * PI * 0.0254;
 const float P_forward = 0.8;
-const float P_difference = 4;
-const float D = 0;
-const float maxSpeed = 0.3;
+const float P_difference = 2.0;
+const float D = 0.15;
+const float maxSpeed = 1.0;
 const float trackWidth = 150.0/1000.0; // mm converted to m
 
 // Handles wrap-around in encoder reading (since its absolute pos)
@@ -95,10 +95,10 @@ float normalizeDelta(float delta) {
   return fmod(delta, 180);
 }
 
-float prevDiff = 0;
 bool done = false;
 long doneTime = 0;
 long loopCnt = 0;
+float filteredOmega = 0;
 
 void loop() {
   // If finished, don't do anything
@@ -130,7 +130,9 @@ void loop() {
   // Calculate heading
   //float dTheta = (deltaR - deltaL)/trackWidth * mPerDeg; // Encoder-based angle calculation
   // IMU-based angle calculation
-  float dTheta = (micros() - prevTime)/1000000.0f * (mpu.getRotationZ()/131.0f) * DEG_TO_RAD;
+  float dT = (micros() - prevTime)/1000000.0f;
+  float omega = (mpu.getRotationZ()/131.0f) * DEG_TO_RAD;
+  float dTheta = dT * omega;
   prevTime = micros();
   theta += dTheta;
 
@@ -169,6 +171,13 @@ void loop() {
   }
 
   pow *= min(((float)(millis() - start))/(1000.0f), 1.0); // Accel curve for 500ms
+  
+  // Make sure it follows max speed
+  if (pow > maxSpeed) {
+    pow = maxSpeed;
+  } else if (pow < -maxSpeed) {
+    pow = -maxSpeed;
+  }
 
   // Calculate target angle
   float ang;
@@ -180,26 +189,24 @@ void loop() {
 
   // Calculate W
   float w = ang * P_difference;
-  if (w > maxSpeed) {
-    w = maxSpeed;
-  } else if (w < -maxSpeed) {
-    w = -maxSpeed;
-  }
-  w -= (w - prevDiff) * D; // D term
-  prevDiff = w;
-  if (pow > maxSpeed) {
-    pow = maxSpeed;
-  } else if (pow < -maxSpeed) {
-    pow = -maxSpeed;
-  }
+
+  // D term
+  filteredOmega = filteredOmega * 0.3 + omega * 0.7; // Low-pass filter
+  w += filteredOmega * D;
 
   // Apply W
-  float powL = pow;
-  float powR = pow;
-  if (w > 0) {
-    powR -= w;
-  } else {
-    powL += w;
+  float powL = pow + w;
+  float powR = pow - w;
+
+  // Scale so that they don't pass 1
+  if (abs(powL) > 1.0 || abs(powR) > 1.0) {
+    if (abs(powL) > abs(powR)) {
+      powL /= abs(powL);
+      powR /= abs(powL);
+    } else {
+      powL /= abs(powR);
+      powR /= abs(powR);
+    }
   }
 
   // Powers
@@ -210,7 +217,7 @@ void loop() {
   if (Serial && millis() - lastPrint > 50) {
     Serial.print("time:");
     Serial.print(millis() - start);
-    Serial.print(",leftDelta:");
+    /*Serial.print(",leftDelta:");
     Serial.print(deltaL);
     Serial.print(",rightDelta:");
     Serial.print(deltaR); 
@@ -221,7 +228,7 @@ void loop() {
     Serial.print(",leftPrev:");
     Serial.print(prevLeft);
     Serial.print(",rightPrev:");
-    Serial.print(prevRight);
+    Serial.print(prevRight);*/
     Serial.print(",distLateral:");
     Serial.print(distLateral);
     Serial.print(",distAxial:");
