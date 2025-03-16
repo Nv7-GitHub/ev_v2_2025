@@ -73,11 +73,13 @@ void setup() {
   prevTime = micros();
 }
 
-float distAxial = 0;
-float distLateral = 0;
+// CONFIGURE THESE
+const float targetDist = 7;
+float distAxial = 0.19; // If it goes too far, increase this
+float distLateral = -0.23; // If it goes left normally, make this positive
 float theta = 0;
 
-const float targetDist = 7;
+// Vehicle parameters
 const float mPerDeg = (1.0f/360.0f) * 2 * PI * 0.0254;
 const float P_forward = 0.8;
 const float P_difference = 2.0;
